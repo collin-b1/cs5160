@@ -1,130 +1,139 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>My First Rendering Algo</title>
-  <style>
-    body {
-      margin: 0;
-      overflow: hidden;
-      background: #050510;
-      color: white;
-      font-family: Arial, sans-serif;
-    }
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>My First Rendering Algo</title>
+    <style>
+      body {
+        margin: 0;
+        overflow: hidden;
+        background: #050510;
+        color: white;
+        font-family: Arial, sans-serif;
+      }
 
-    canvas {
-      display: block;
-    }
+      canvas {
+        display: block;
+      }
 
-    #info {
-      position: fixed;
-      top: 12px;
-      left: 12px;
-      padding: 12px 14px;
-      background: rgba(0, 0, 0, 0.6);
-      border-radius: 8px;
-      font-size: 14px;
-      line-height: 1.4;
-    }
-  </style>
-</head>
-<body>
-  <canvas id="canvas"></canvas>
+      #info {
+        position: fixed;
+        top: 12px;
+        left: 12px;
+        padding: 12px 14px;
+        background: rgba(0, 0, 0, 0.6);
+        border-radius: 8px;
+        font-size: 14px;
+        line-height: 1.4;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="canvas"></canvas>
 
-  <div id="info">
-    <b>Pixel grid test</b><br>
-  </div>
+    <div id="info"><b>Pixel grid test</b><br /></div>
 
-<script>
+    <script>
+      //we add shapes (like lines) to this canvas
+      const canvas = document.getElementById("canvas");
+      const ctx = canvas.getContext("2d");
 
-  //we add shapes (like lines) to this canvas
-  const canvas = document.getElementById("canvas");
-  const ctx = canvas.getContext("2d");
+      const rows = 200;
+      const cols = 320;
+      const pixelGrid = Array.from({ length: cols }, () =>
+        Array(rows).fill("#050510"),
+      );
 
+      let seePixelOutline = true;
 
-  const rows = 200;
-  const cols = 320;
-  const pixelGrid = Array.from({ length: cols }, () => Array(rows).fill("#050510"));
+      //light up a couple of pixels
+      setPixelColor(100, 100, "#FFFFFF");
+      setPixelColor(100, 101, "#FFFFFF");
+      setPixelColor(101, 100, "#FFFFFF");
+      setPixelColor(101, 101, "#FFFFFF");
+      setPixelColor(102, 101, "#FFFFFF");
 
-  let seePixelOutline = true; 
+      makePixelatedLine(50, 90, 100, 50, "#00FF00");
+      makePixelatedLine(70, 40, 45, 90, "#FFFF00");
+      makePixelatedLine(150, 20, 150, 90, "#0000FF");
+      makePixelatedLine(50, 75, 150, 75, "#FF00FF");
 
+      function draw() {
+        //here we set up and clear the canvas, every draw frame
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = "#050510";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-   //light up a couple of pixels 
-  setPixelColor(100,100,"#FFFFFF")
-  setPixelColor(100,101,"#FFFFFF")
-  setPixelColor(101,100,"#FFFFFF")
-  setPixelColor(101,101,"#FFFFFF")
-  setPixelColor(102,101,"#FFFFFF")
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = "#444444";
 
+        for (v = 0; v < 200; v++) {
+          for (u = 0; u < 320; u++) {
+            //if you want to see what is going on
+            // console.log(u);
+            // console.log(v);
+            // console.log(pixelGrid[u][v]);
+            // console.log("----")
 
-  makePixelatedLine(50, 90, 100, 50, "#00FF00" ); 
+            ctx.fillStyle = pixelGrid[u][v];
+            ctx.fillRect(u * 5, v * 5, 5, 5);
 
+            if (seePixelOutline) {
+              ctx.strokeRect(u * 5, v * 5, 5, 5);
+            }
+          }
+        }
+      }
 
+      function setPixelColor(u, v, color) {
+        pixelGrid[u][v] = color;
+      }
 
-  function draw(){
+      function makePixelatedLine(u1, v1, u2, v2, color) {
+        // Incremental approach
 
-    //here we set up and clear the canvas, every draw frame
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = "#050510";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-    ctx.lineWidth = 1;
-    ctx.strokeStyle = "#444444";
-
-
-    for(v=0; v< 200; v++){
-      for(u=0; u<320; u++){
-
-        //if you want to see what is going on
-        // console.log(u);
-        // console.log(v);
-        // console.log(pixelGrid[u][v]);
-        // console.log("----")
-
-        ctx.fillStyle = pixelGrid[u][v];
-        ctx.fillRect(u*5, v*5, 5, 5);
-
-        if( seePixelOutline ){
-          ctx.strokeRect(u*5, v*5, 5, 5);
+        // If the two points are the same then just fill in the one pixel and stop
+        if (u1 === u2 && v1 === v2) {
+          setPixelColor(u1, v1, color);
+          return;
         }
 
+        if (Math.abs(u2 - u1) >= Math.abs(v2 - v1)) {
+          // Greater increase in x than y
+          if (u1 > u2) {
+            // First x coord is greater than second, need to swap points
+            [u1, v1, u2, v2] = [u2, v2, u1, v1];
+          }
+          const s = (v2 - v1) / (u2 - u1);
+          let v = v1;
+          for (let u = u1; u <= u2; ++u) {
+            setPixelColor(u, Math.round(v), color);
+            v += s;
+          }
+        } else {
+          // Greater increase in y than x
+          if (v1 > v2) {
+            // First y coord is greater than second, need to swap points
+            [u1, v1, u2, v2] = [u2, v2, u1, v1];
+          }
+          const s = (u2 - u1) / (v2 - v1);
+          let u = u1;
+          for (let v = v1; v <= v2; ++v) {
+            setPixelColor(Math.round(u), v, color);
+            u += s;
+          }
+        }
       }
-    }
 
+      function resizeCanvas() {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        draw();
+      }
 
-  }
-
-  function setPixelColor(u,v,color){
-    pixelGrid[u][v] = color; 
-  }
-
-  function makePixelatedLine(u1, v1, u2, v2, color){
-
-    //******** TO DO
-    //use the algorithm in the slides to incrementally fill
-    // in pixels going from u1,v1 to u2,v2
-    // you can use 'setPixelColor'
-    // note, you may need to handle 'cases'- ex.u1>u2 vs u2>u2 
-
-
-
-  }
-
-  
-  function resizeCanvas() {
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
-    draw();
-  }
-
-
-
-  window.addEventListener("resize", resizeCanvas);
-  resizeCanvas();
-
-
-
-</script>
-</body>
+      window.addEventListener("resize", resizeCanvas);
+      resizeCanvas();
+    </script>
+  </body>
 </html>
