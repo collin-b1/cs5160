@@ -38,6 +38,9 @@
       const canvas = document.getElementById("canvas");
       const ctx = canvas.getContext("2d");
 
+      let playerSpeed = 0.1;
+      const speedLimit = 0.5;
+
       class Mesh {
         #vertices; // Array({x,y,z})
         #edges = new Map(); // Set<string> e.g. {"0,1": [0, 1], "3,7": [3, 7]}
@@ -117,63 +120,114 @@
         };
       }
 
-      const cubeObj = `
-        o Cube
-        v 1.000000 1.000000 -1.000000
-        v 1.000000 -1.000000 -1.000000
-        v 1.000000 1.000000 1.000000
-        v 1.000000 -1.000000 1.000000
-        v -1.000000 1.000000 -1.000000
-        v -1.000000 -1.000000 -1.000000
-        v -1.000000 1.000000 1.000000
-        v -1.000000 -1.000000 1.000000
+      const pineObj = `
+        o Pine
+        v 0.000000 6.000000 0.000000
+        v 0.500000 3.000000 -1.250000
+        v 1.250000 3.000000 -0.500000
+        v 1.250000 3.000000 0.500000
+        v 0.500000 3.000000 1.250000
+        v -1.250000 3.000000 -0.500000
+        v -0.500000 3.000000 -1.250000
+        v -0.500000 3.000000 1.250000
+        v -1.250000 3.000000 0.500000
+        v 0.250000 3.000000 -0.100000
+        v 0.100000 3.000000 -0.250000
+        v 0.100000 0.000000 -0.250000
+        v 0.250000 0.000000 -0.100000
+        v 0.100000 3.000000 0.250000
+        v 0.250000 3.000000 0.100000
+        v 0.250000 0.000000 0.100000
+        v 0.100000 0.000000 0.250000
+        v -0.100000 3.000000 -0.250000
+        v -0.250000 3.000000 -0.100000
+        v -0.250000 0.000000 -0.100000
+        v -0.100000 0.000000 -0.250000
+        v -0.250000 3.000000 0.100000
+        v -0.100000 3.000000 0.250000
+        v -0.100000 0.000000 0.250000
+        v -0.250000 0.000000 0.100000
         s 0
-        f 1 5 7 3
-        f 4 3 7 8
-        f 8 7 5 6
-        f 6 2 4 8
-        f 2 1 3 4
-        f 6 5 1 2
+        f 1 3 2
+        f 8 1 9
+        f 1 5 4
+        f 1 7 6
+        f 7 1 2
+        f 3 1 4
+        f 5 1 8
+        f 9 1 6
+        f 3 7 2
+        f 3 4 7
+        f 4 9 6
+        f 5 9 4
+        f 5 8 9
+        f 4 6 7
+        f 10 13 12 11
+        f 24 23 22 25
+        f 14 17 16 15
+        f 18 21 20 19
+        f 21 18 11 12
+        f 13 10 15 16
+        f 17 14 23 24
+        f 25 22 19 20
       `;
-      const cubeMesh = new Mesh(parseObject(cubeObj));
+      const pineMesh = new Mesh(parseObject(pineObj));
 
-      const pyramidObj = `
-        o Pyramid
-        v -0.037956 1.199100 -0.016197
-        v 1.000000 -1.000000 -1.000000
-        v 1.000000 -1.000000 1.000000
-        v -1.000000 -1.000000 -1.000000
-        v -1.000000 -1.000000 1.000000
+      const skiObject = `
+        o Ski
+        v 0.250000 0.050000 2.471404
+        v 0.250000 0.050000 -4.482312
+        v -0.250000 0.050000 2.471404
+        v -0.250000 0.050000 -4.482312
+        v 0.250000 0.050000 2.471404
+        v -0.250000 0.050000 2.471404
+        v 0.112778 0.252497 2.971404
+        v -0.112778 0.252497 2.971404
         s 0
-        f 3 1 5
-        f 5 1 4
-        f 4 2 3 5
-        f 2 1 3
-        f 4 1 2
+        f 1 2 4 3
+        f 5 7 8 6
       `;
-      const pyramidMesh = new Mesh(parseObject(pyramidObj));
+      const skiMesh = new Mesh(parseObject(skiObject));
 
-      // Create some objects
-      const cube = new WorldObject(cubeMesh, {
-        x: 2,
-        y: 0,
-        z: 0,
-      });
-      const pyramid = new WorldObject(pyramidMesh, {
-        x: -2,
-        y: 0,
-        z: 0,
-      });
+      const numPines = 50;
+      const pines = [];
+      for (let i = 0; i < numPines; ++i) {
+        const pine = new WorldObject(pineMesh, {
+          x: (Math.random() - 0.5) * 100,
+          y: -1.5,
+          z: Math.random() * 1000 + 5,
+        });
+        pines.push(pine);
+      }
+      console.log(pines);
+
+      const skiLeft = new WorldObject(skiMesh);
+      const skiRight = new WorldObject(skiMesh);
 
       const worldObjects = new Set();
-      worldObjects.add(cube);
-      worldObjects.add(pyramid);
+      pines.forEach(pine => worldObjects.add(pine));
+      worldObjects.add(skiLeft);
+      worldObjects.add(skiRight);
 
       console.log(worldObjects);
 
-      const camera = { x: 0, y: 0, z: -10 };
+      const camera = { x: 0, y: 0, z: 0 };
 
       window.requestAnimationFrame(gameLoop);
+
+      const nearCutoff = 0.1;
+      const project = c => ({
+        u: (c.x / c.z) * canvas.width + canvas.width / 2,
+        v: (c.y / c.z) * canvas.height + canvas.height / 2,
+      });
+      const clip = (behind, front) => {
+        const t = (nearCutoff - front.z) / (behind.z - front.z);
+        return {
+          x: front.x + t * (behind.x - front.x),
+          y: front.y + t * (behind.y - front.y),
+          z: nearCutoff,
+        };
+      };
 
       function draw() {
         //here we set up and clear the canvas, every draw frame
@@ -184,65 +238,33 @@
         for (const worldObj of worldObjects) {
           const { vertices, edges } = worldObj.mesh;
 
-          // here we will store u,v coordinates for the vertices,
-          // projected onto our 2d plane
-          const projectedVertices = [];
+          const camVerts = [];
 
-          //- loop through the original vertices (X, Y, Z)
-          //- and determine their position in 3D space relative to camera (x, y, z)
-          //- then project them onto the 2D plane
           for (let v = 0; v < vertices.length; v++) {
-            //  you could also write it foreach...
-            // console.log("original position:"); //helpful to print things
-            // console.log(vertices[v]);
-
-            // console.log("camera-relative position");
             let camVert = {};
 
             // Need to subtract camera position from vertex pos
             camVert.x = vertices[v].x + worldObj.pos.x - camera.x;
             camVert.y = vertices[v].y + worldObj.pos.y - camera.y;
             camVert.z = vertices[v].z + worldObj.pos.z - camera.z;
-            // console.log(camVert);
 
-            if (camVert.z < 0) {
-              projectedVertices.push(null);
-              continue;
-            }
-
-            // console.log("projected position");
-            let canvasPos = {};
-
-            // Horizontal calculation based on u/1 = x/z
-            canvasPos.u = camVert.x / camVert.z;
-
-            // Vertical calculation based on v/1 = y/z
-            canvasPos.v = camVert.y / camVert.z;
-            // console.log(canvasPos);
-
-            // console.log("scale and center");
-            canvasPos.u = canvasPos.u * canvas.width + canvas.width / 2;
-            canvasPos.v = canvasPos.v * canvas.height + canvas.height / 2;
-            // console.log(canvasPos);
-
-            projectedVertices.push(canvasPos);
-            // console.log("---------------");
+            camVerts.push(camVert);
           }
 
-          //loop through the edges
-          //  find the newly computed projected vertices - 2 per edge
-          //  draw the line
           for (let e = 0; e < edges.length; e++) {
-            // v needs to be flipped because javascript canvas
-            // uses y=0 at the top of the screen and going down on the
-            // screen increases y.
-
-            //first vertex
-            const p1 = projectedVertices[edges[e][0]];
-            const p2 = projectedVertices[edges[e][1]];
+            let c1 = camVerts[edges[e][0]];
+            let c2 = camVerts[edges[e][1]];
 
             // Don't render the projected line if its behind the camera
-            if (!p1 || !p2) continue;
+            if (c1.z < nearCutoff && c2.z < nearCutoff) continue;
+            if (c1.z < nearCutoff) {
+              c1 = clip(c1, c2);
+            } else if (c2.z < nearCutoff) {
+              c2 = clip(c2, c1);
+            }
+
+            const p1 = project(c1);
+            const p2 = project(c2);
 
             const u1 = p1.u;
             const v1 = canvas.height - p1.v;
@@ -288,7 +310,6 @@
           case "ArrowRight":
             camera.x += MOVE_AMOUNT;
             console.log("Right arrow pressed");
-            draw();
             break;
           case "KeyR":
             // Reset camera to original position from earlier
@@ -296,7 +317,7 @@
             camera.y = 0;
             camera.z = -10;
             console.log("Reset");
-            draw();
+            playerSpeed = 0.1;
             break;
           default:
             return;
@@ -310,7 +331,21 @@
         prevTime = timestamp;
         const fps = Math.round(1 / deltaTime);
 
+        camera.z += Math.min(playerSpeed, speedLimit);
+        // camera.y -= 0.005;
+
+        skiLeft.pos = { x: camera.x - 0.5, y: camera.y - 1.5, z: camera.z + 2 };
+        skiRight.pos = {
+          x: camera.x + 0.5,
+          y: camera.y - 1.5,
+          z: camera.z + 2,
+        };
+
         draw();
+
+        if (playerSpeed <= speedLimit) {
+          playerSpeed *= 1.01;
+        }
 
         ctx.fillStyle = "white";
         ctx.font = "18px Arial";
