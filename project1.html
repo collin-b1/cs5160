@@ -38,36 +38,124 @@
       const canvas = document.getElementById("canvas");
       const ctx = canvas.getContext("2d");
 
-      //an array of objects
-      //    to access the first 'x' coordinate you could type vertices[0].x
-      let vertices = [
-        { x: 1, y: 1, z: 1 }, // A, idx 0
-        { x: -1, y: 1, z: 1 }, // B, idx 1
-        { x: 1, y: -1, z: 1 }, // C, idx 2
-        { x: -1, y: -1, z: 1 }, // D, idx 3
-        { x: 1, y: 1, z: -1 }, // E, idx 4
-        { x: -1, y: 1, z: -1 }, // F, idx 5
-        { x: 1, y: -1, z: -1 }, // G, idx 6
-        { x: -1, y: -1, z: -1 }, // H, idx 7
-      ];
+      class Mesh {
+        #vertices; // Array({x,y,z})
+        #edges = new Map(); // Set<string> e.g. {"0,1": [0, 1], "3,7": [3, 7]}
+        #faces; // Array(3)
+        constructor({ vertices = [], faces = [] } = {}) {
+          //todo: prevent mutation from outside
+          this.#vertices = vertices;
+          this.#faces = faces;
 
-      // an array of the indics for the two vertices in each edge
-      let edges = [
-        [0, 1], //AB
-        [0, 2], //AC
-        [0, 4], //AE
-        [2, 3], //CD
-        [1, 3], //BD
-        [2, 6], //CG
-        [4, 5], //EF
-        [4, 6], //EG
-        [1, 5], //BF
-        [6, 7], //GH
-        [5, 7], //FH
-        [3, 7], //DH
-      ];
+          faces.forEach(face => {
+            for (let i = 0; i < face.length; ++i) {
+              const v1 = face[i];
+              const v2 = face[(i + 1) % face.length];
+              const edge = [v1, v2].sort((a, b) => a - b);
+              this.#edges.set(edge.join(","), edge);
+            }
+          });
 
-      let camera = { x: 0, y: 0, z: -10 };
+          console.log("Vertices:", this.#vertices);
+          console.log("Edges:", this.#edges);
+          console.log("Faces:", this.#faces);
+        }
+
+        get vertices() {
+          return this.#vertices;
+        }
+
+        get faces() {
+          return this.#faces;
+        }
+
+        get edges() {
+          return Array.from(this.#edges.values());
+        }
+      }
+
+      class WorldObject {
+        #mesh;
+        pos;
+        constructor(mesh, pos = { x: 0, y: 0, z: 0 }) {
+          this.#mesh = mesh;
+          this.pos = structuredClone(pos);
+        }
+        get mesh() {
+          return this.#mesh;
+        }
+      }
+
+      function parseObject(obj) {
+        const vertices = [];
+        const faces = [];
+
+        const splitLines = obj.split(/\r?\n/g).map(line => line.trim());
+
+        for (const line of splitLines) {
+          const params = line.split(/\s+/);
+          const varType = params.shift();
+          switch (varType) {
+            case "v":
+              const vertex = params.map(s => parseFloat(s));
+              vertices.push({ x: vertex[0], y: vertex[1], z: vertex[2] });
+              break;
+            case "f":
+              const face = params.map(s => parseInt(s) - 1); // subtract one for zero indexing
+              faces.push(face);
+              break;
+            default:
+              break;
+          }
+        }
+
+        // console.log(vertices, faces);
+
+        return {
+          vertices,
+          faces,
+        };
+      }
+
+      const cubeObj = `
+        o Cube
+        v 1.000000 1.000000 -1.000000
+        v 1.000000 -1.000000 -1.000000
+        v 1.000000 1.000000 1.000000
+        v 1.000000 -1.000000 1.000000
+        v -1.000000 1.000000 -1.000000
+        v -1.000000 -1.000000 -1.000000
+        v -1.000000 1.000000 1.000000
+        v -1.000000 -1.000000 1.000000
+        s 0
+        f 1 5 7 3
+        f 4 3 7 8
+        f 8 7 5 6
+        f 6 2 4 8
+        f 2 1 3 4
+        f 6 5 1 2
+      `;
+
+      const cubeMesh = new Mesh(parseObject(cubeObj));
+      const cube1 = new WorldObject(cubeMesh, {
+        x: 2,
+        y: 0,
+        z: 0,
+      });
+
+      const cube2 = new WorldObject(cubeMesh, {
+        x: -2,
+        y: 0,
+        z: 0,
+      });
+
+      const worldObjects = new Set();
+      worldObjects.add(cube1);
+      worldObjects.add(cube2);
+
+      console.log(worldObjects);
+
+      const camera = { x: 0, y: 0, z: -10 };
 
       window.requestAnimationFrame(gameLoop);
 
@@ -77,65 +165,77 @@
         ctx.fillStyle = "#050510";
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-        // here we will store u,v coordinates for the vertices,
-        // projected onto our 2d plane
-        let projectedVertices = [];
+        for (const worldObj of worldObjects) {
+          const { vertices, edges } = worldObj.mesh;
 
-        //- loop through the original vertices (X, Y, Z)
-        //- and determine their position in 3D space relative to camera (x, y, z)
-        //- then project them onto the 2D plane
-        for (let v = 0; v < vertices.length; v++) {
-          //  you could also write it foreach...
-          console.log("original position:"); //helpful to print things
-          console.log(vertices[v]);
+          // here we will store u,v coordinates for the vertices,
+          // projected onto our 2d plane
+          const projectedVertices = [];
 
-          console.log("camera-relative position");
-          let camVert = {};
+          //- loop through the original vertices (X, Y, Z)
+          //- and determine their position in 3D space relative to camera (x, y, z)
+          //- then project them onto the 2D plane
+          for (let v = 0; v < vertices.length; v++) {
+            //  you could also write it foreach...
+            // console.log("original position:"); //helpful to print things
+            // console.log(vertices[v]);
 
-          // Need to subtract camera position from vertex pos
-          camVert.x = vertices[v].x - camera.x;
-          camVert.y = vertices[v].y - camera.y;
-          camVert.z = vertices[v].z - camera.z;
-          console.log(camVert);
+            // console.log("camera-relative position");
+            let camVert = {};
 
-          console.log("projected position");
-          let canvasPos = {};
+            // Need to subtract camera position from vertex pos
+            camVert.x = vertices[v].x + worldObj.pos.x - camera.x;
+            camVert.y = vertices[v].y + worldObj.pos.y - camera.y;
+            camVert.z = vertices[v].z + worldObj.pos.z - camera.z;
+            // console.log(camVert);
 
-          // Horizontal calculation based on u/1 = x/z
-          canvasPos.u = camVert.x / camVert.z;
+            if (camVert.z < 0) {
+              projectedVertices.push(null);
+              continue;
+            }
 
-          // Vertical calculation based on v/1 = y/z
-          canvasPos.v = camVert.y / camVert.z;
-          console.log(canvasPos);
+            // console.log("projected position");
+            let canvasPos = {};
 
-          console.log("scale and center");
-          canvasPos.u = canvasPos.u * canvas.width + canvas.width / 2;
-          canvasPos.v = canvasPos.v * canvas.height + canvas.height / 2;
-          console.log(canvasPos);
+            // Horizontal calculation based on u/1 = x/z
+            canvasPos.u = camVert.x / camVert.z;
 
-          projectedVertices.push(canvasPos);
-          console.log("---------------");
-        }
+            // Vertical calculation based on v/1 = y/z
+            canvasPos.v = camVert.y / camVert.z;
+            // console.log(canvasPos);
 
-        //loop through the edges
-        //  find the newly computed projected vertices - 2 per edge
-        //  draw the line
-        for (let e = 0; e < edges.length; e++) {
-          // v needs to be flipped because javascript canvas
-          // uses y=0 at the top of the screen and going down on the
-          // screen increases y.
+            // console.log("scale and center");
+            canvasPos.u = canvasPos.u * canvas.width + canvas.width / 2;
+            canvasPos.v = canvasPos.v * canvas.height + canvas.height / 2;
+            // console.log(canvasPos);
 
-          //first vertex
-          let e1 = edges[e][0]; //idx
-          let u1 = projectedVertices[e1].u;
-          let v1 = canvas.height - projectedVertices[e1].v;
+            projectedVertices.push(canvasPos);
+            // console.log("---------------");
+          }
 
-          //second vertex
-          let e2 = edges[e][1]; //idx
-          let u2 = projectedVertices[e2].u;
-          let v2 = canvas.height - projectedVertices[e2].v;
+          //loop through the edges
+          //  find the newly computed projected vertices - 2 per edge
+          //  draw the line
+          for (let e = 0; e < edges.length; e++) {
+            // v needs to be flipped because javascript canvas
+            // uses y=0 at the top of the screen and going down on the
+            // screen increases y.
 
-          drawLine(u1, v1, u2, v2);
+            //first vertex
+            const p1 = projectedVertices[edges[e][0]];
+            const p2 = projectedVertices[edges[e][1]];
+
+            // Don't render the projected line if its behind the camera
+            if (!p1 || !p2) continue;
+
+            const u1 = p1.u;
+            const v1 = canvas.height - p1.v;
+
+            const u2 = p2.u;
+            const v2 = canvas.height - p2.v;
+
+            drawLine(u1, v1, u2, v2);
+          }
         }
       }
 
