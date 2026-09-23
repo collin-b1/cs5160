@@ -7,21 +7,37 @@
     <style>
       body {
         margin: 0;
+        height: 100vh;
         overflow: hidden;
         background: #050510;
         color: white;
         font-family: Arial, sans-serif;
         font-size: 0.8em;
+        display: flex;
+        flex-direction: column;
       }
 
       header {
+        flex: 0 0 auto;
         line-height: 1em;
-        padding: 0 1em;
+        padding: 0 1em 1em;
         border-bottom: 1px solid #666;
+      }
+
+      main {
+        flex: 1 1 auto;
+        min-height: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
       }
 
       canvas {
         display: block;
+        max-width: 100%;
+        max-height: 100%;
+        width: auto;
+        height: auto;
       }
     </style>
   </head>
@@ -29,35 +45,50 @@
     <header>
       <h1>Project 1</h1>
       <p>by: Collin Barrett</p>
+      <button id="toggle">Toggle Render Mode</button>
     </header>
     <main>
       <canvas id="canvas"></canvas>
     </main>
     <script>
+      let renderMode = 0;
+      const rows = 200;
+      const cols = 320;
+      const pixelGrid = Array.from({ length: cols }, () =>
+        Array(rows).fill("#050510"),
+      );
+
       //we add shapes (like lines) to this canvas
       const canvas = document.getElementById("canvas");
       const ctx = canvas.getContext("2d");
 
-      let playerSpeed = 0.1;
+      const toggleButton = document.getElementById("toggle");
+      toggleButton.addEventListener("click", () => {
+        renderMode = (renderMode + 1) % 3;
+      });
+
+      let playerSpeed = 0.25;
       const speedLimit = 0.5;
 
       class Mesh {
         #vertices; // Array({x,y,z})
-        #edges = new Map(); // Set<string> e.g. {"0,1": [0, 1], "3,7": [3, 7]}
-        #faces; // Array(3)
+        #edges; // Array(Array(2))
+        #faces; // Array(Array(3))
         constructor({ vertices = [], faces = [] } = {}) {
           //todo: prevent mutation from outside
           this.#vertices = vertices;
           this.#faces = faces;
 
+          const edgeList = new Map();
           faces.forEach(face => {
             for (let i = 0; i < face.length; ++i) {
               const v1 = face[i];
               const v2 = face[(i + 1) % face.length];
               const edge = [v1, v2].sort((a, b) => a - b);
-              this.#edges.set(edge.join(","), edge);
+              edgeList.set(edge.join(","), edge);
             }
           });
+          this.#edges = Array.from(edgeList.values());
 
           console.log("Vertices:", this.#vertices);
           console.log("Edges:", this.#edges);
@@ -73,16 +104,18 @@
         }
 
         get edges() {
-          return Array.from(this.#edges.values());
+          return this.#edges;
         }
       }
 
       class WorldObject {
         #mesh;
-        pos;
-        constructor(mesh, pos = { x: 0, y: 0, z: 0 }) {
+        pos; // Position vector
+        scale; // Scaling factor
+        constructor(mesh, pos = { x: 0, y: 0, z: 0 }, scale = 1) {
           this.#mesh = mesh;
           this.pos = structuredClone(pos);
+          this.scale = scale;
         }
         get mesh() {
           return this.#mesh;
@@ -156,12 +189,6 @@
         f 3 1 4
         f 5 1 8
         f 9 1 6
-        f 3 7 2
-        f 3 4 7
-        f 4 9 6
-        f 5 9 4
-        f 5 8 9
-        f 4 6 7
         f 10 13 12 11
         f 24 23 22 25
         f 14 17 16 15
@@ -172,6 +199,32 @@
         f 25 22 19 20
       `;
       const pineMesh = new Mesh(parseObject(pineObj));
+
+      const rockObj = `
+        o Rock
+        v 0.719604 1.207523 -0.676351
+        v 1.285064 0.036005 -1.282906
+        v 0.925595 1.535423 0.540958
+        v 1.725207 0.099268 0.898398
+        v -0.690725 1.287405 -0.233060
+        v -1.000000 0.000700 -1.000000
+        v -0.140010 1.557634 0.220227
+        v -1.000000 0.000700 1.000000
+        s 0
+        f 1 7 3
+        f 3 8 4
+        f 8 5 6
+        f 2 8 6
+        f 1 4 2
+        f 6 1 2
+        f 1 5 7
+        f 3 7 8
+        f 8 7 5
+        f 2 4 8
+        f 1 3 4
+        f 6 5 1
+      `;
+      const rockMesh = new Mesh(parseObject(rockObj));
 
       const skiObject = `
         o Ski
@@ -189,29 +242,44 @@
       `;
       const skiMesh = new Mesh(parseObject(skiObject));
 
-      const numPines = 50;
+      const numPines = 25;
       const pines = [];
       for (let i = 0; i < numPines; ++i) {
-        const pine = new WorldObject(pineMesh, {
+        const pos = {
           x: (Math.random() - 0.5) * 100,
-          y: -1.5,
+          y: 0,
           z: Math.random() * 1000 + 5,
-        });
+        };
+        const scale = 1 + Math.random() * 1;
+        const pine = new WorldObject(pineMesh, pos, scale);
         pines.push(pine);
       }
-      console.log(pines);
+
+      const numRocks = 25;
+      const rocks = [];
+      for (let i = 0; i < numRocks; ++i) {
+        const pos = {
+          x: (Math.random() - 0.5) * 100,
+          y: 0,
+          z: Math.random() * 1000 + 5,
+        };
+        const scale = 1 + Math.random() * 1;
+        const rock = new WorldObject(rockMesh, pos, scale);
+        rocks.push(rock);
+      }
 
       const skiLeft = new WorldObject(skiMesh);
       const skiRight = new WorldObject(skiMesh);
 
       const worldObjects = new Set();
       pines.forEach(pine => worldObjects.add(pine));
+      rocks.forEach(rock => worldObjects.add(rock));
       worldObjects.add(skiLeft);
       worldObjects.add(skiRight);
 
       console.log(worldObjects);
 
-      const camera = { x: 0, y: 0, z: 0 };
+      const camera = { x: 0, y: 1.5, z: 0 };
 
       window.requestAnimationFrame(gameLoop);
 
@@ -229,11 +297,20 @@
         };
       };
 
+      const inBounds = (u, v) =>
+        u >= 0 && u <= cols - 1 && v >= 0 && v <= rows - 1;
+
       function draw() {
         //here we set up and clear the canvas, every draw frame
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         ctx.fillStyle = "#050510";
         ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        if (renderMode !== 0) {
+          for (let u = 0; u < cols; u++) {
+            pixelGrid[u].fill("#050510");
+          }
+        }
 
         for (const worldObj of worldObjects) {
           const { vertices, edges } = worldObj.mesh;
@@ -244,9 +321,12 @@
             let camVert = {};
 
             // Need to subtract camera position from vertex pos
-            camVert.x = vertices[v].x + worldObj.pos.x - camera.x;
-            camVert.y = vertices[v].y + worldObj.pos.y - camera.y;
-            camVert.z = vertices[v].z + worldObj.pos.z - camera.z;
+            camVert.x =
+              vertices[v].x * worldObj.scale + worldObj.pos.x - camera.x;
+            camVert.y =
+              vertices[v].y * worldObj.scale + worldObj.pos.y - camera.y;
+            camVert.z =
+              vertices[v].z * worldObj.scale + worldObj.pos.z - camera.z;
 
             camVerts.push(camVert);
           }
@@ -272,7 +352,37 @@
             const u2 = p2.u;
             const v2 = canvas.height - p2.v;
 
-            drawLine(u1, v1, u2, v2);
+            if (renderMode === 0) {
+              drawLine(u1, v1, u2, v2);
+            } else {
+              const PIXEL_SIZE = canvas.width / cols;
+              const gridU1 = u1 / PIXEL_SIZE;
+              const gridV1 = v1 / PIXEL_SIZE;
+              const gridU2 = u2 / PIXEL_SIZE;
+              const gridV2 = v2 / PIXEL_SIZE;
+
+              if (inBounds(gridU1, gridV1) && inBounds(gridU2, gridV2)) {
+                makePixelatedLine(
+                  Math.floor(gridU1),
+                  Math.floor(gridV1),
+                  Math.floor(gridU2),
+                  Math.floor(gridV2),
+                  "#fff",
+                );
+              }
+            }
+          }
+        }
+
+        if (renderMode !== 0) {
+          ctx.lineWidth = 1;
+          ctx.strokeStyle = "#444444";
+
+          for (v = 0; v < 200; v++) {
+            for (u = 0; u < 320; u++) {
+              ctx.fillStyle = pixelGrid[u][v];
+              ctx.fillRect(u * 5, v * 5, 5, 5);
+            }
           }
         }
       }
@@ -281,58 +391,96 @@
       function drawLine(x1, y1, x2, y2) {
         ctx.lineWidth = 2;
         ctx.strokeStyle = "white";
-
-        //this is how you draw a line on the canvas
         ctx.beginPath();
         ctx.moveTo(x1, y1);
         ctx.lineTo(x2, y2);
         ctx.stroke();
       }
 
-      //this is how we detect events-
+      function setPixelColor(u, v, color) {
+        pixelGrid[u][v] = color;
+      }
+
+      function makePixelatedLine(u1, v1, u2, v2, color) {
+        // Incremental approach
+
+        // If the two points are the same then just fill in the one pixel and stop
+        if (u1 === u2 && v1 === v2) {
+          setPixelColor(u1, v1, color);
+          return;
+        }
+
+        if (Math.abs(u2 - u1) >= Math.abs(v2 - v1)) {
+          // Greater increase in x than y
+          if (u1 > u2) {
+            // First x coord is greater than second, need to swap points
+            [u1, v1, u2, v2] = [u2, v2, u1, v1];
+          }
+          const s = (v2 - v1) / (u2 - u1);
+          let v = v1;
+          for (let u = u1; u <= u2; ++u) {
+            setPixelColor(u, Math.round(v), color);
+            v += s;
+          }
+        } else {
+          // Greater increase in y than x
+          if (v1 > v2) {
+            // First y coord is greater than second, need to swap points
+            [u1, v1, u2, v2] = [u2, v2, u1, v1];
+          }
+          const s = (u2 - u1) / (v2 - v1);
+          let u = u1;
+          for (let v = v1; v <= v2; ++v) {
+            setPixelColor(Math.round(u), v, color);
+            u += s;
+          }
+        }
+      }
 
       const MOVE_AMOUNT = 0.25;
+      const ARROW_KEYS = new Set([
+        "ArrowUp",
+        "ArrowDown",
+        "ArrowLeft",
+        "ArrowRight",
+      ]);
+      const heldKeys = new Set();
+
       document.addEventListener("keydown", event => {
-        event.preventDefault();
-        switch (event.code) {
-          case "ArrowUp":
-            camera.z += MOVE_AMOUNT;
-            console.log("Up arrow pressed");
-            break;
-          case "ArrowDown":
-            camera.z -= MOVE_AMOUNT;
-            console.log("Down arrow pressed");
-            break;
-          case "ArrowLeft":
-            camera.x -= MOVE_AMOUNT;
-            console.log("Left arrow pressed");
-            break;
-          case "ArrowRight":
-            camera.x += MOVE_AMOUNT;
-            console.log("Right arrow pressed");
-            break;
-          case "KeyR":
-            // Reset camera to original position from earlier
-            camera.x = 0;
-            camera.y = 0;
-            camera.z = -10;
-            console.log("Reset");
-            playerSpeed = 0.1;
-            break;
-          default:
-            return;
+        if (ARROW_KEYS.has(event.code)) {
+          event.preventDefault();
+          heldKeys.add(event.code);
+        } else if (event.code === "KeyR") {
+          event.preventDefault();
+          camera.x = 0;
+          camera.y = 1.5;
+          camera.z = -10;
+          console.log("Reset");
+          playerSpeed = 0.25;
         }
       });
 
+      document.addEventListener("keyup", event => {
+        heldKeys.delete(event.code);
+      });
+
       let deltaTime = 0.0;
-      let prevTime, fps;
+      let prevTime = null;
+      const BASE_FPS = 60;
       function gameLoop(timestamp) {
+        if (prevTime === null) prevTime = timestamp;
         deltaTime = (timestamp - prevTime) / 1000;
         prevTime = timestamp;
-        const fps = Math.round(1 / deltaTime);
+        const fps = Math.round(1 / deltaTime) || 0;
 
-        camera.z += Math.min(playerSpeed, speedLimit);
+        camera.z += Math.min(playerSpeed, speedLimit) * deltaTime * BASE_FPS;
         // camera.y -= 0.005;
+
+        const move = MOVE_AMOUNT * deltaTime * BASE_FPS;
+        if (heldKeys.has("ArrowUp")) camera.z += move;
+        if (heldKeys.has("ArrowDown")) camera.z -= move;
+        if (heldKeys.has("ArrowLeft")) camera.x -= move;
+        if (heldKeys.has("ArrowRight")) camera.x += move;
 
         skiLeft.pos = { x: camera.x - 0.5, y: camera.y - 1.5, z: camera.z + 2 };
         skiRight.pos = {
@@ -344,7 +492,7 @@
         draw();
 
         if (playerSpeed <= speedLimit) {
-          playerSpeed *= 1.01;
+          playerSpeed *= Math.pow(1.1, deltaTime * BASE_FPS);
         }
 
         ctx.fillStyle = "white";
@@ -354,13 +502,8 @@
         requestAnimationFrame(gameLoop);
       }
 
-      function resizeCanvas() {
-        canvas.width = window.innerWidth;
-        canvas.height = window.innerHeight;
-      }
-
-      window.addEventListener("resize", resizeCanvas);
-      resizeCanvas();
+      canvas.width = 1600;
+      canvas.height = 1000;
     </script>
   </body>
 </html>
