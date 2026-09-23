@@ -316,7 +316,12 @@
           }
         }
 
-        for (const worldObj of worldObjects) {
+        // Painter's algorithm
+        const sortedObjects = [...worldObjects].sort(
+          (a, b) => b.pos.z - a.pos.z,
+        );
+
+        for (const worldObj of sortedObjects) {
           const { vertices, edges } = worldObj.mesh;
 
           const camVerts = [];
