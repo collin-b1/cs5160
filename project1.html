@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>My First Rendering Algo</title>
+    <title>Project 1: Ski Simulator</title>
     <style>
       body {
         margin: 0;
@@ -18,10 +18,27 @@
       }
 
       header {
+        display: flex;
         flex: 0 0 auto;
         line-height: 1em;
         padding: 0 1em 1em;
         border-bottom: 1px solid #666;
+      }
+
+      header section {
+        flex: 1;
+      }
+
+      kbd {
+        border-radius: 5px;
+        border: 1px solid #ccc;
+        padding: 0.125em 0.25em;
+      }
+
+      #instructions {
+        display: flex;
+        align-items: center;
+        line-height: 1.5;
       }
 
       main {
@@ -43,22 +60,39 @@
   </head>
   <body>
     <header>
-      <h1>Project 1</h1>
-      <p>by: Collin Barrett</p>
-      <button id="toggle">Toggle Render Mode</button>
+      <section id="header">
+        <h1>Project 1: Ski Simulator</h1>
+        <p>by: Collin Barrett</p>
+        <button id="toggle">Toggle Render Mode</button>
+      </section>
+      <section id="instructions">
+        <span style="margin: 1em">
+          Use <kbd>Left&nbsp;Arrow</kbd> and <kbd>Right&nbsp;Arrow</kbd> keys to
+          move left and right. <kbd>Up&nbsp;Arrow</kbd> and
+          <kbd>Down&nbsp;Arrow</kbd> to speed up and slow down.
+          <kbd>Spacebar</kbd> makes you jump. Press <kbd>R</kbd> to reset to
+          starting camera.
+        </span>
+      </section>
     </header>
     <main>
       <canvas id="canvas"></canvas>
     </main>
     <script>
+      // Wireframe = 0, Pixel Wireframe = 1, Pixel Faces = 2
       let renderMode = 0;
+
+      // Setup pixel grid and z buffer
       const rows = 200;
       const cols = 320;
       const pixelGrid = Array.from({ length: cols }, () =>
         Array(rows).fill("#050510"),
       );
+      const zBuffer = Array.from({ length: cols }, () =>
+        Array(rows).fill(Infinity),
+      );
 
-      //we add shapes (like lines) to this canvas
+      // Set up javascript canvas
       const canvas = document.getElementById("canvas");
       const ctx = canvas.getContext("2d");
       canvas.width = 1600;
@@ -74,12 +108,12 @@
       let playerSpeed = 0.25;
       const speedLimit = 0.5;
 
+      // Represents the vertices, edges, and faces of a model
       class Mesh {
         #vertices; // Array({x,y,z})
         #edges; // Array(Array(2))
         #faces; // Array(Array(3))
         constructor({ vertices = [], faces = [] } = {}) {
-          //todo: prevent mutation from outside
           this.#vertices = vertices;
           this.#faces = faces;
 
@@ -112,20 +146,33 @@
         }
       }
 
+      // Unique object containing a translation vector, scaling factor, color, and a shared Mesh
       class WorldObject {
         #mesh;
-        pos; // Position vector
+        pos; // Translation vector
         scale; // Scaling factor
-        constructor(mesh, pos = { x: 0, y: 0, z: 0 }, scale = 1) {
+        color; // Color of face/edge
+        constructor(
+          mesh,
+          pos = { x: 0, y: 0, z: 0 },
+          scale = 1,
+          color = "#fff",
+        ) {
           this.#mesh = mesh;
           this.pos = structuredClone(pos);
           this.scale = scale;
+          this.color = color;
         }
         get mesh() {
           return this.#mesh;
         }
       }
 
+      /**
+       * Converts text from a .obj file into an array of vertices and
+       * an array of faces. The resulting arrays can be used to create
+       * a Mesh Object.
+       */
       function parseObject(obj) {
         const vertices = [];
         const faces = [];
@@ -157,6 +204,23 @@
         };
       }
 
+      // Pyramid
+      const pyramidObj = `
+        o Pyramid
+        v 0.000000 12.000000 0.000000
+        v 8.000000 0.000000 -8.000000
+        v 8.000000 0.000000 8.000000
+        v -8.000000 0.000000 -8.000000
+        v -8.000000 0.000000 8.000000
+        s 0
+        f 3 1 5
+        f 5 1 4
+        f 2 1 3
+        f 4 1 2
+      `;
+      const pyramidMesh = new Mesh(parseObject(pyramidObj));
+
+      // Pine Tree
       const pineObj = `
         o Pine
         v 0.000000 6.000000 0.000000
@@ -193,17 +257,26 @@
         f 3 1 4
         f 5 1 8
         f 9 1 6
-        f 10 13 12 11
-        f 24 23 22 25
-        f 14 17 16 15
-        f 18 21 20 19
-        f 21 18 11 12
-        f 13 10 15 16
-        f 17 14 23 24
-        f 25 22 19 20
+        f 13 11 10
+        f 23 25 24
+        f 17 15 14
+        f 21 19 18
+        f 18 12 21
+        f 10 16 13
+        f 14 24 17
+        f 22 20 25
+        f 13 12 11
+        f 23 22 25
+        f 17 16 15
+        f 21 20 19
+        f 18 11 12
+        f 10 15 16
+        f 14 23 24
+        f 22 19 20
       `;
       const pineMesh = new Mesh(parseObject(pineObj));
 
+      // Rock
       const rockObj = `
         o Rock
         v 0.719604 1.207523 -0.676351
@@ -230,6 +303,7 @@
       `;
       const rockMesh = new Mesh(parseObject(rockObj));
 
+      // Ski
       const skiObject = `
         o Ski
         v 0.250000 0.050000 2.471404
@@ -241,11 +315,14 @@
         v 0.112778 0.252497 2.971404
         v -0.112778 0.252497 2.971404
         s 0
-        f 1 2 4 3
-        f 5 7 8 6
+        f 3 1 2
+        f 6 5 7
+        f 3 2 4
+        f 6 7 8
       `;
       const skiMesh = new Mesh(parseObject(skiObject));
 
+      // Add objects to world
       const numPines = 25;
       const pines = [];
       for (let i = 0; i < numPines; ++i) {
@@ -254,8 +331,8 @@
           y: 0,
           z: Math.random() * 1000 + 5,
         };
-        const scale = 1 + Math.random() * 1;
-        const pine = new WorldObject(pineMesh, pos, scale);
+        const scale = 1 + Math.random() * 3;
+        const pine = new WorldObject(pineMesh, pos, scale, "#28a046");
         pines.push(pine);
       }
 
@@ -268,31 +345,53 @@
           z: Math.random() * 1000 + 5,
         };
         const scale = 1 + Math.random() * 1;
-        const rock = new WorldObject(rockMesh, pos, scale);
+        const rock = new WorldObject(rockMesh, pos, scale, "#8c8c96");
         rocks.push(rock);
       }
 
-      const skiLeft = new WorldObject(skiMesh);
-      const skiRight = new WorldObject(skiMesh);
+      const numPyramids = 2;
+      const pyramids = [];
+      for (let i = 0; i < numPyramids; ++i) {
+        const pos = {
+          x: (Math.random() - 0.5) * 100,
+          y: 0,
+          z: Math.random() * 1000 + 5,
+        };
+        const scale = 1 + Math.random() * 1;
+        const pyramid = new WorldObject(pyramidMesh, pos, scale, "#CCB789");
+        pyramids.push(pyramid);
+      }
+
+      const skiColor = "#dc3232";
+      const skiLeft = new WorldObject(skiMesh, undefined, 1, skiColor);
+      const skiRight = new WorldObject(skiMesh, undefined, 1, skiColor);
 
       const worldObjects = new Set();
       pines.forEach(pine => worldObjects.add(pine));
       rocks.forEach(rock => worldObjects.add(rock));
+      pyramids.forEach(pyramid => worldObjects.add(pyramid));
       worldObjects.add(skiLeft);
       worldObjects.add(skiRight);
 
       console.log(worldObjects);
 
+      // Initialize camera
       const camera = { x: 0, y: 1.5, z: 0 };
 
-      window.requestAnimationFrame(gameLoop);
-
+      /** If a vertex is within this distance to the camera it doesn't draw */
       const nearCutoff = 0.1;
-      const project = c => ({
-        u: (c.x / c.z) * canvas.width + canvas.width / 2,
-        v: (c.y / c.z) * canvas.height + canvas.height / 2,
+
+      // Pinhole projection from 3d space to 2d space
+      // Also moves origin to center of the canvas
+      const project = p => ({
+        u: (p.x / p.z) * canvas.width + canvas.width / 2,
+        v: (p.y / p.z) * canvas.height + canvas.height / 2,
       });
+
+      // When an edge is partway in front of camera and part behind, clips the line
+      // to be right on the edge in the correct spot.
       const clip = (behind, front) => {
+        // % between front and behind that the z is exactly nearCutoff
         const t = (nearCutoff - front.z) / (behind.z - front.z);
         return {
           x: front.x + t * (behind.x - front.x),
@@ -301,9 +400,11 @@
         };
       };
 
+      // Helper for if a vertex (u, v) is in the pixel grid
       const inBounds = (u, v) =>
         u >= 0 && u <= cols - 1 && v >= 0 && v <= rows - 1;
 
+      // Main draw function
       function draw() {
         //here we set up and clear the canvas, every draw frame
         ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -316,6 +417,12 @@
           }
         }
 
+        if (renderMode === 2) {
+          for (let u = 0; u < cols; u++) {
+            zBuffer[u].fill(Infinity);
+          }
+        }
+
         // Painter's algorithm
         const sortedObjects = [...worldObjects].sort(
           (a, b) => b.pos.z - a.pos.z,
@@ -323,6 +430,7 @@
 
         for (const worldObj of sortedObjects) {
           const { vertices, edges } = worldObj.mesh;
+          const lineColor = worldObj.color ?? "#fff";
 
           const camVerts = [];
 
@@ -338,6 +446,11 @@
               vertices[v].z * worldObj.scale + worldObj.pos.z - camera.z;
 
             camVerts.push(camVert);
+          }
+
+          if (renderMode === 2) {
+            drawFaces(worldObj, camVerts);
+            continue;
           }
 
           for (let e = 0; e < edges.length; e++) {
@@ -362,7 +475,7 @@
             const v2 = canvas.height - p2.v;
 
             if (renderMode === 0) {
-              drawLine(u1, v1, u2, v2);
+              drawLine(u1, v1, u2, v2, lineColor);
             } else {
               const gridU1 = u1 / PIXEL_SIZE;
               const gridV1 = v1 / PIXEL_SIZE;
@@ -375,7 +488,7 @@
                   Math.floor(gridV1),
                   Math.floor(gridU2),
                   Math.floor(gridV2),
-                  "#fff",
+                  lineColor,
                 );
               }
             }
@@ -386,8 +499,8 @@
           ctx.lineWidth = 1;
           ctx.strokeStyle = "#444444";
 
-          for (v = 0; v < rows; v++) {
-            for (u = 0; u < cols; u++) {
+          for (let v = 0; v < rows; v++) {
+            for (let u = 0; u < cols; u++) {
               ctx.fillStyle = pixelGrid[u][v];
               ctx.fillRect(
                 u * PIXEL_SIZE,
@@ -400,10 +513,72 @@
         }
       }
 
+      // Turn camera relative position to pixel grid position with z buffer
+      const toGrid = c => {
+        const p = project(c);
+        return {
+          u: p.u / PIXEL_SIZE,
+          v: (canvas.height - p.v) / PIXEL_SIZE,
+          z: c.z,
+        };
+      };
+
+      function drawFaces(worldObj, camVerts) {
+        const faces = worldObj.mesh.faces.map(([a, b, c]) => [
+          camVerts[a],
+          camVerts[b],
+          camVerts[c],
+        ]);
+
+        for (const [a, b, c] of faces) {
+          // Skip triangles that reach behind the camera
+          if (a.z < nearCutoff || b.z < nearCutoff || c.z < nearCutoff) {
+            continue;
+          }
+          fillTriangle(toGrid(a), toGrid(b), toGrid(c), worldObj.color);
+        }
+      }
+
+      // Edge function based on https://jtsorlinis.github.io/rendering-tutorial/
+      const edgeFunction = (a, b, c) => {
+        return (b.u - a.u) * (c.v - a.v) - (b.v - a.v) * (c.u - a.u);
+      };
+
+      function fillTriangle(p1, p2, p3, color) {
+        const area = edgeFunction(p1, p2, p3);
+        if (area === 0) return;
+
+        // Bounding box
+        const minU = Math.max(0, Math.floor(Math.min(p1.u, p2.u, p3.u)));
+        const maxU = Math.min(cols - 1, Math.ceil(Math.max(p1.u, p2.u, p3.u)));
+        const minV = Math.max(0, Math.floor(Math.min(p1.v, p2.v, p3.v)));
+        const maxV = Math.min(rows - 1, Math.ceil(Math.max(p1.v, p2.v, p3.v)));
+
+        for (let v = minV; v <= maxV; v++) {
+          for (let u = minU; u <= maxU; u++) {
+            const p = { u, v };
+
+            // Barycentric coordinates
+            const alpha = edgeFunction(p2, p3, p) / area;
+            const beta = edgeFunction(p3, p1, p) / area;
+            const gamma = edgeFunction(p1, p2, p) / area;
+
+            if (alpha >= 0 && beta >= 0 && gamma >= 0) {
+              // Depth test: smaller z means closer to the camera
+              const z = alpha * p1.z + beta * p2.z + gamma * p3.z;
+              if (z < zBuffer[u][v]) {
+                zBuffer[u][v] = z;
+                setPixelColor(u, v, color);
+              }
+            }
+          }
+        }
+      }
+
       //This uses a built in 'drawLine' function, provided by the javascript canvas
-      function drawLine(x1, y1, x2, y2) {
+      function drawLine(x1, y1, x2, y2, color = "white") {
         ctx.lineWidth = 2;
-        ctx.strokeStyle = "white";
+        ctx.strokeStyle = color;
         ctx.beginPath();
         ctx.moveTo(x1, y1);
         ctx.lineTo(x2, y2);
@@ -450,24 +625,37 @@
         }
       }
 
+      // Input and movement
       const MOVE_AMOUNT = 0.25;
-      const ARROW_KEYS = new Set([
+      const CONTROL_KEYS = new Set([
         "ArrowUp",
         "ArrowDown",
         "ArrowLeft",
         "ArrowRight",
+        "Space",
       ]);
       const heldKeys = new Set();
 
+      const GROUND_HEIGHT = 1.5;
+      const JUMP_VELOCITY = 32;
+      const GRAVITY = 20;
+      const FAST_FALL_GRAVITY = 100; // Gravity while holding down
+      let verticalVelocity = 0;
+      const isGrounded = () => camera.y <= GROUND_HEIGHT;
+
       document.addEventListener("keydown", event => {
-        if (ARROW_KEYS.has(event.code)) {
+        if (CONTROL_KEYS.has(event.code)) {
           event.preventDefault();
           heldKeys.add(event.code);
+          if (event.code === "Space" && !event.repeat && isGrounded()) {
+            verticalVelocity = JUMP_VELOCITY;
+          }
         } else if (event.code === "KeyR") {
           event.preventDefault();
           camera.x = 0;
-          camera.y = 1.5;
+          camera.y = GROUND_HEIGHT;
           camera.z = -10;
+          verticalVelocity = 0;
           console.log("Reset");
           playerSpeed = 0.25;
         }
@@ -477,6 +665,8 @@
         heldKeys.delete(event.code);
       });
 
+      // Game loop logic
+      // https://spicyyoghurt.com/tutorials/html5-javascript-game-development/create-a-proper-game-loop-with-requestanimationframe
       let deltaTime = 0.0;
       let prevTime = null;
       const BASE_FPS = 60;
@@ -491,9 +681,21 @@
 
         const move = MOVE_AMOUNT * deltaTime * BASE_FPS;
         if (heldKeys.has("ArrowUp")) camera.z += move;
-        if (heldKeys.has("ArrowDown")) camera.z -= move;
+        if (heldKeys.has("ArrowDown") && isGrounded()) camera.z -= move;
         if (heldKeys.has("ArrowLeft")) camera.x -= move;
         if (heldKeys.has("ArrowRight")) camera.x += move;
+
+        if (verticalVelocity !== 0 || !isGrounded()) {
+          const gravity = heldKeys.has("ArrowDown")
+            ? FAST_FALL_GRAVITY
+            : GRAVITY;
+          verticalVelocity -= gravity * deltaTime;
+          camera.y += verticalVelocity * deltaTime;
+          if (camera.y <= GROUND_HEIGHT) {
+            camera.y = GROUND_HEIGHT;
+            verticalVelocity = 0;
+          }
+        }
 
         skiLeft.pos = { x: camera.x - 0.5, y: camera.y - 1.5, z: camera.z + 2 };
         skiRight.pos = {
@@ -512,8 +714,11 @@
         ctx.font = "18px Arial";
         ctx.fillText(`${fps} fps`, 8, 24);
 
-        requestAnimationFrame(gameLoop);
+        window.requestAnimationFrame(gameLoop);
       }
+
+      // Start game loop
+      window.requestAnimationFrame(gameLoop);
     </script>
   </body>
 </html>
