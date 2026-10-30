@@ -1,6 +1,6 @@
 # Project 1: Pinhole camera, rasterized display
 
-**[Live Site](https://collinb.me/cs5160/project1.html)**
+**[Live Site](https://collinb.me/cs5160/project1)**
 
 **[Demo Video](https://www.youtube.com/watch?v=oWT_glcvfQU)**
 
