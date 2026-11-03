@@ -48,14 +48,18 @@ const gl = canvas.getContext('webgl');
 const vertexShaderSource = `
   attribute vec3 aPosition;   // corner position of the cube (model space)
   attribute vec3 aNormal;     // direction the face is pointing
+  attribute vec3 aColor;      // color of this vertex
 
   uniform mat4 uModel;        // moves/scales THIS cube into the world
   uniform mat4 uView;         // where the camera is and where it looks
   uniform mat4 uProjection;   // perspective: far things look smaller
 
   varying vec3 vNormal;       // handed to the fragment shader
+  varying vec3 vColor;        // interpolated color
 
   void main() {
+    vColor = aColor;
+
     // Turn the normal the same way the cube is turned. Our cubes are only
     // stretched and moved, never rotated, so this changes nothing here.
     // It would matter if you added rotation.
@@ -71,8 +75,8 @@ const vertexShaderSource = `
 const fragmentShaderSource = `
   precision mediump float;
 
-  uniform vec3 uColor;        // this cube's color (red, green, blue: 0..1)
   varying vec3 vNormal;
+  varying vec3 vColor;
 
   void main() {
     // Simple lighting so we can tell the faces of a cube apart.
@@ -83,7 +87,7 @@ const fragmentShaderSource = `
     // Keep 30% "ambient" light so faces in shadow aren't pure black.
     float light = 0.3 + 0.7 * brightness;
 
-    gl_FragColor = vec4(uColor * light, 1.0);   // 1.0 = fully opaque
+    gl_FragColor = vec4(vColor * light, 1.0);   // 1.0 = fully opaque
   }
 `;
 
@@ -190,7 +194,6 @@ gl.vertexAttribPointer(aNormal, 3, gl.FLOAT, false, stride, 3 * BYTES_PER_FLOAT)
 const uModel = gl.getUniformLocation(program, 'uModel');
 const uView = gl.getUniformLocation(program, 'uView');
 const uProjection = gl.getUniformLocation(program, 'uProjection');
-const uColor = gl.getUniformLocation(program, 'uColor');
 
 
 // ---------------------------------------------------------------------
@@ -199,8 +202,8 @@ const uColor = gl.getUniformLocation(program, 'uColor');
 //    The cubes are laid out in a GRID_SIZE × GRID_SIZE grid on the
 //    ground plane (y = 0), centered on the origin.
 // ---------------------------------------------------------------------
-const GRID_SIZE = 10;   // 10 × 10 = 100 cubes
-const SPACING = 1.5;    // distance between cube centers
+const GRID_SIZE = 100;   // 10 × 10 = 100 cubes
+const SPACING = 1;    // distance between cube centers
 
 const cubes = [];
 for (let row = 0; row < GRID_SIZE; row++) {
@@ -209,10 +212,29 @@ for (let row = 0; row < GRID_SIZE; row++) {
       x: (col - (GRID_SIZE - 1) / 2) * SPACING,
       z: (row - (GRID_SIZE - 1) / 2) * SPACING,
       height: 0.5 + Math.random() * 4,                        // 0.5 to 4.5
-      color: [Math.random(), Math.random(), Math.random()],   // random RGB
     });
   }
 }
+
+// Returns the RGB color (0..1) for one vertex of one cube.
+function vertexColor(cube, vertexIndex) {
+  return [Math.random(), Math.random(), Math.random()];
+}
+
+// One color buffer holding VERTEX_COUNT colors for every cube, in order.
+const colors = new Float32Array(cubes.length * VERTEX_COUNT * 3);
+cubes.forEach((cube, i) => {
+  for (let v = 0; v < VERTEX_COUNT; v++) {
+    colors.set(vertexColor(cube, v), (i * VERTEX_COUNT + v) * 3);
+  }
+});
+
+const colorBuffer = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, colorBuffer);
+gl.bufferData(gl.ARRAY_BUFFER, colors, gl.STATIC_DRAW);
+
+const aColor = gl.getAttribLocation(program, 'aColor');
+gl.enableVertexAttribArray(aColor);
 
 
 // ---------------------------------------------------------------------
@@ -304,7 +326,7 @@ function lookAt(eye, target, up) {
 // ---------------------------------------------------------------------
 // 5. DRAW
 // ---------------------------------------------------------------------
-function draw() {
+function draw(time) {
   // Make the canvas's pixel size match its size on the page.
   canvas.width = canvas.clientWidth;
   canvas.height = canvas.clientHeight;
@@ -318,13 +340,21 @@ function draw() {
   gl.enable(gl.DEPTH_TEST);
   gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
+  const extent = GRID_SIZE * SPACING;
+  const radius = 2 * extent;
+  const height = 1.5 * extent;
+  const angle = (time / 20000) * 2 * Math.PI;
+  const eye = [radius * Math.cos(angle), height, radius * Math.sin(angle)];
+
   // The camera is the same for every cube, so set it once.
   const aspect = canvas.width / canvas.height;
-  gl.uniformMatrix4fv(uProjection, false, perspective(Math.PI / 4, aspect, 0.1, 100));
-  gl.uniformMatrix4fv(uView, false, lookAt([14, 14, 18], [0, 0, 0], [0, 1, 0]));
+  gl.uniformMatrix4fv(uProjection, false, perspective(Math.PI / 4, aspect, 0.1, 5 * extent));
+  gl.uniformMatrix4fv(uView, false, lookAt(eye, [0, 0, 0], [0, 1, 0]));
 
   // Draw every cube: same triangles each time, different uniforms.
-  for (const cube of cubes) {
+  // Each cube reads its own slice of the color buffer.
+  gl.bindBuffer(gl.ARRAY_BUFFER, colorBuffer);
+  for (const [i, cube] of cubes.entries()) {
     // First stretch the cube to its height, then move it to its spot.
     // (In multiply(a, b), b happens first, so scaling goes on the right.)
     const model = multiply(
@@ -333,12 +363,13 @@ function draw() {
     );
 
     gl.uniformMatrix4fv(uModel, false, model);
-    gl.uniform3fv(uColor, cube.color);
+    gl.vertexAttribPointer(aColor, 3, gl.FLOAT, false, 0, i * VERTEX_COUNT * 3 * BYTES_PER_FLOAT);
     gl.drawArrays(gl.TRIANGLES, 0, VERTEX_COUNT);
   }
 }
 
-draw();
-
-// Redraw if the browser window changes size.
-window.addEventListener('resize', draw);
+function frame(time) {
+  draw(time);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
