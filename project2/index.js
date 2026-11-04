@@ -1,5 +1,5 @@
 // =====================================================================
-//  A grid of cubes with random colors and random heights, in WebGL
+//  A grid of cubes colored and scaled from a color map and height map, in WebGL
 // =====================================================================
 //
 // THE BIG PICTURE
@@ -200,41 +200,81 @@ const uProjection = gl.getUniformLocation(program, 'uProjection');
 // 3. THE SCENE: a plain JavaScript list of cubes
 //    This part has nothing to do with WebGL - it's just data.
 //    The cubes are laid out in a GRID_SIZE × GRID_SIZE grid on the
-//    ground plane (y = 0), centered on the origin.
+//    ground plane (y = 0), centered on the origin. Each cube's height and
+//    vertex colors are sampled from the height map and color map images,
+//    using the nearest pixel (so grids under 500 × 500 skip pixels).
 // ---------------------------------------------------------------------
 const GRID_SIZE = 100;   // 10 × 10 = 100 cubes
 const SPACING = 1;    // distance between cube centers
 
+const MAX_HEIGHT = 0.3 * GRID_SIZE * SPACING;  // height where the height map is white
+const MIN_HEIGHT = 0.2 * SPACING;               // so ocean cubes are still visible
+
+// Load an image file and return its pixels (an ImageData).
+function loadImageData(url) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const c = document.createElement('canvas');
+      c.width = img.width;
+      c.height = img.height;
+      const ctx = c.getContext('2d');
+      ctx.drawImage(img, 0, 0);
+      resolve(ctx.getImageData(0, 0, img.width, img.height));
+    };
+    img.onerror = reject;
+    img.src = url;
+  });
+}
+
+// RGB (0..1) of the pixel nearest to (u, v), where u and v run 0..1
+// across the image.
+function samplePixel(image, u, v) {
+  const x = Math.min(image.width - 1, Math.floor(u * image.width));
+  const y = Math.min(image.height - 1, Math.floor(v * image.height));
+  const i = (y * image.width + x) * 4;
+  return [image.data[i] / 255, image.data[i + 1] / 255, image.data[i + 2] / 255];
+}
+
 const cubes = [];
-for (let row = 0; row < GRID_SIZE; row++) {
-  for (let col = 0; col < GRID_SIZE; col++) {
-    cubes.push({
-      x: (col - (GRID_SIZE - 1) / 2) * SPACING,
-      z: (row - (GRID_SIZE - 1) / 2) * SPACING,
-      height: 0.5 + Math.random() * 4,                        // 0.5 to 4.5
-    });
-  }
-}
-
-// Returns the RGB color (0..1) for one vertex of one cube.
-function vertexColor(cube, vertexIndex) {
-  return [Math.random(), Math.random(), Math.random()];
-}
-
-// One color buffer holding VERTEX_COUNT colors for every cube, in order.
-const colors = new Float32Array(cubes.length * VERTEX_COUNT * 3);
-cubes.forEach((cube, i) => {
-  for (let v = 0; v < VERTEX_COUNT; v++) {
-    colors.set(vertexColor(cube, v), (i * VERTEX_COUNT + v) * 3);
-  }
-});
-
-const colorBuffer = gl.createBuffer();
-gl.bindBuffer(gl.ARRAY_BUFFER, colorBuffer);
-gl.bufferData(gl.ARRAY_BUFFER, colors, gl.STATIC_DRAW);
-
+let colorBuffer;
 const aColor = gl.getAttribLocation(program, 'aColor');
 gl.enableVertexAttribArray(aColor);
+
+function buildScene(colorMap, heightMap) {
+  for (let row = 0; row < GRID_SIZE; row++) {
+    for (let col = 0; col < GRID_SIZE; col++) {
+      const gray = samplePixel(heightMap, (col + 0.5) / GRID_SIZE, (row + 0.5) / GRID_SIZE)[0];
+      cubes.push({
+        row,
+        col,
+        x: (col - (GRID_SIZE - 1) / 2) * SPACING,
+        z: (row - (GRID_SIZE - 1) / 2) * SPACING,
+        height: Math.max(MIN_HEIGHT, gray * MAX_HEIGHT),
+      });
+    }
+  }
+
+  // Returns the RGB color (0..1) for one vertex of one cube: the color
+  // map pixel at that vertex's corner of the grid cell.
+  function vertexColor(cube, vertexIndex) {
+    const vx = cubeVertices[vertexIndex * 6];       // -0.5 or 0.5
+    const vz = cubeVertices[vertexIndex * 6 + 2];
+    return samplePixel(colorMap, (cube.col + 0.5 + vx) / GRID_SIZE, (cube.row + 0.5 + vz) / GRID_SIZE);
+  }
+
+  // One color buffer holding VERTEX_COUNT colors for every cube, in order.
+  const colors = new Float32Array(cubes.length * VERTEX_COUNT * 3);
+  cubes.forEach((cube, i) => {
+    for (let v = 0; v < VERTEX_COUNT; v++) {
+      colors.set(vertexColor(cube, v), (i * VERTEX_COUNT + v) * 3);
+    }
+  });
+
+  colorBuffer = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, colorBuffer);
+  gl.bufferData(gl.ARRAY_BUFFER, colors, gl.STATIC_DRAW);
+}
 
 
 // ---------------------------------------------------------------------
@@ -372,4 +412,11 @@ function frame(time) {
   draw(time);
   requestAnimationFrame(frame);
 }
-requestAnimationFrame(frame);
+
+Promise.all([
+  loadImageData('assets/project2.png'),
+  loadImageData('assets/heightmap.png'),
+]).then(([colorMap, heightMap]) => {
+  buildScene(colorMap, heightMap);
+  requestAnimationFrame(frame);
+});
