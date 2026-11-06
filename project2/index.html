@@ -6,9 +6,25 @@
   <style>
     html, body { margin: 0; height: 100%; background: black; overflow: hidden; }
     canvas { display: block; width: 100%; height: 100%; }
+    #controls {
+      position: absolute; top: 0; left: 0; right: 0;
+      padding: 8px 16px; color: white; font: 14px sans-serif;
+      background: rgba(0, 0, 0, 0.5);
+    }
+    #controls input { width: min(400px, 60vw); vertical-align: middle; }
+    #controls h1 { margin: 0; font-size: 20px; }
+    #controls p { margin: 2px 0 8px; }
   </style>
 </head>
 <body>
+  <div id="controls">
+    <h1>Project 2: Cube World</h1>
+    <p>by: Collin Barrett</p>
+    <label>Grid size:
+      <input id="gridSize" type="range" min="10" max="500" step="10" value="100">
+    </label>
+    <span id="gridSizeLabel">100 x 100</span>
+  </div>
   <canvas id="c"></canvas>
   <script src="index.js"></script>
 </body>

@@ -204,11 +204,10 @@ const uProjection = gl.getUniformLocation(program, 'uProjection');
 //    vertex colors are sampled from the height map and color map images,
 //    using the nearest pixel (so grids under 500 × 500 skip pixels).
 // ---------------------------------------------------------------------
-const GRID_SIZE = 100;   // 10 × 10 = 100 cubes
-const SPACING = 1;    // distance between cube centers
+let gridSize = 100; // set by the slider in index.html
+const SPACING = 1; // distance between cube centers
 
-const MAX_HEIGHT = 0.3 * GRID_SIZE * SPACING;  // height where the height map is white
-const MIN_HEIGHT = 0.2 * SPACING;               // so ocean cubes are still visible
+const MIN_HEIGHT = 0.2 * SPACING; // so ocean cubes are still visible
 
 // Load an image file and return its pixels (an ImageData).
 function loadImageData(url) {
@@ -242,15 +241,18 @@ const aColor = gl.getAttribLocation(program, 'aColor');
 gl.enableVertexAttribArray(aColor);
 
 function buildScene(colorMap, heightMap) {
-  for (let row = 0; row < GRID_SIZE; row++) {
-    for (let col = 0; col < GRID_SIZE; col++) {
-      const gray = samplePixel(heightMap, (col + 0.5) / GRID_SIZE, (row + 0.5) / GRID_SIZE)[0];
+  const maxHeight = 0.4 * gridSize * SPACING;  // height where the height map is white
+
+  cubes.length = 0;
+  for (let row = 0; row < gridSize; row++) {
+    for (let col = 0; col < gridSize; col++) {
+      const gray = samplePixel(heightMap, (col + 0.5) / gridSize, (row + 0.5) / gridSize)[0];
       cubes.push({
         row,
         col,
-        x: (col - (GRID_SIZE - 1) / 2) * SPACING,
-        z: (row - (GRID_SIZE - 1) / 2) * SPACING,
-        height: Math.max(MIN_HEIGHT, gray * MAX_HEIGHT),
+        x: (col - (gridSize - 1) / 2) * SPACING,
+        z: (row - (gridSize - 1) / 2) * SPACING,
+        height: Math.max(MIN_HEIGHT, gray * maxHeight),
       });
     }
   }
@@ -260,7 +262,7 @@ function buildScene(colorMap, heightMap) {
   function vertexColor(cube, vertexIndex) {
     const vx = cubeVertices[vertexIndex * 6];       // -0.5 or 0.5
     const vz = cubeVertices[vertexIndex * 6 + 2];
-    return samplePixel(colorMap, (cube.col + 0.5 + vx) / GRID_SIZE, (cube.row + 0.5 + vz) / GRID_SIZE);
+    return samplePixel(colorMap, (cube.col + 0.5 + vx) / gridSize, (cube.row + 0.5 + vz) / gridSize);
   }
 
   // One color buffer holding VERTEX_COUNT colors for every cube, in order.
@@ -271,9 +273,64 @@ function buildScene(colorMap, heightMap) {
     }
   });
 
+  gl.deleteBuffer(colorBuffer);
   colorBuffer = gl.createBuffer();
   gl.bindBuffer(gl.ARRAY_BUFFER, colorBuffer);
   gl.bufferData(gl.ARRAY_BUFFER, colors, gl.STATIC_DRAW);
+
+  // Find the crater: the center of the highest pixels in the height map
+  // (the crater rim is a ring of the brightest pixels).
+  let sumU = 0, sumV = 0, count = 0;
+  for (let y = 0; y < heightMap.height; y++) {
+    for (let x = 0; x < heightMap.width; x++) {
+      if (heightMap.data[(y * heightMap.width + x) * 4] >= 230) {
+        sumU += (x + 0.5) / heightMap.width;
+        sumV += (y + 0.5) / heightMap.height;
+        count++;
+      }
+    }
+  }
+  const extent = gridSize * SPACING;
+  const crater = [(sumU / count - 0.5) * extent, maxHeight, (sumV / count - 0.5) * extent];
+
+  // Control points for bezier curves
+  smokeCurve = [
+    crater,
+    [crater[0], crater[1] + 0.15 * extent, crater[2]],
+    [crater[0] + 0.1 * extent, crater[1] + 0.3 * extent, crater[2]],
+    [crater[0] + 0.4 * extent, crater[1] + 0.4 * extent, crater[2] + 0.1 * extent],
+  ];
+  birdCurve = [
+    [-0.8 * extent, 0.45 * extent, 0.3 * extent],
+    [-0.2 * extent, 0.6 * extent, -0.6 * extent],
+    [0.3 * extent, 0.35 * extent, 0.7 * extent],
+    [0.8 * extent, 0.5 * extent, -0.2 * extent],
+  ];
+}
+
+const SMOKE_COUNT = 30;
+const SMOKE_PERIOD = 6000;  // ms for one cube to travel the whole curve
+let smokeCurve;             // control points [P0, P1, P2, P3], set by buildScene
+
+// B(t) = (1-t)^3 P0 + 3(1-t)^2 t P1 + 3(1-t) t^2 P2 + t^3 P3
+function bezier([p0, p1, p2, p3], t) {
+  const s = 1 - t;
+  const a = s * s * s, b = 3 * s * s * t, c = 3 * s * t * t, d = t * t * t;
+  return [0, 1, 2].map((k) => a * p0[k] + b * p1[k] + c * p2[k] + d * p3[k]);
+}
+
+const BIRD_COUNT = 5;
+const BIRD_PERIOD = 15000;  // ms for one bird to cross the sky
+const BIRD_GAP = 0.04;      // spacing in t between birds in the flock
+const WING_CUBES = 2;       // cubes on each wing, behind the tip
+let birdCurve;              // control points [P0, P1, P2, P3], set by buildScene
+
+// Tangent (direction of travel) at t
+// B'(t) = 3(1-t)^2 (P1-P0) + 6(1-t) t (P2-P1) + 3t^2 (P3-P2)
+function bezierTangent([p0, p1, p2, p3], t) {
+  const s = 1 - t;
+  const a = 3 * s * s, b = 6 * s * t, c = 3 * t * t;
+  return [0, 1, 2].map((k) => a * (p1[k] - p0[k]) + b * (p2[k] - p1[k]) + c * (p3[k] - p2[k]));
 }
 
 
@@ -380,7 +437,7 @@ function draw(time) {
   gl.enable(gl.DEPTH_TEST);
   gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
-  const extent = GRID_SIZE * SPACING;
+  const extent = gridSize * SPACING;
   const radius = 2 * extent;
   const height = 1.5 * extent;
   const angle = (time / 20000) * 2 * Math.PI;
@@ -406,6 +463,52 @@ function draw(time) {
     gl.vertexAttribPointer(aColor, 3, gl.FLOAT, false, 0, i * VERTEX_COUNT * 3 * BYTES_PER_FLOAT);
     gl.drawArrays(gl.TRIANGLES, 0, VERTEX_COUNT);
   }
+
+  // Smoke cubes: one color per cube, so turn off the color buffer and set
+  // a constant color instead. Each cube grows and lightens as it rises.
+  gl.disableVertexAttribArray(aColor);
+  for (let i = 0; i < SMOKE_COUNT; i++) {
+    const t = (time / SMOKE_PERIOD + i / SMOKE_COUNT) % 1;
+    const [x, y, z] = bezier(smokeCurve, t);
+    const size = (0.01 + 0.03 * t) * extent;
+    const gray = 0.3 + 0.6 * t;
+
+    const model = multiply(
+      translation(x, y - size / 2, z),
+      scaling(size, size, size),
+    );
+
+    gl.uniformMatrix4fv(uModel, false, model);
+    gl.vertexAttrib3f(aColor, gray, gray, gray);
+    gl.drawArrays(gl.TRIANGLES, 0, VERTEX_COUNT);
+  }
+
+  const birdSize = 0.01 * extent;
+  gl.vertexAttrib3f(aColor, 0.1, 0.1, 0.1);
+  for (let b = 0; b < BIRD_COUNT; b++) {
+    const t = (((time / BIRD_PERIOD - b * BIRD_GAP) % 1) + 1) % 1;  // wrap into 0..1
+    const [x, y, z] = bezier(birdCurve, t);
+    const [tx, , tz] = bezierTangent(birdCurve, t);
+    const length = Math.hypot(tx, tz);
+    const forward = [tx / length, tz / length];
+    const right = [-forward[1], forward[0]];
+
+    // k = 0 is the tip; each step out along a wing goes one cube back and
+    // one cube to the side.
+    for (let k = -WING_CUBES; k <= WING_CUBES; k++) {
+      const back = Math.abs(k) * birdSize;
+      const side = k * birdSize;
+      const cx = x - forward[0] * back + right[0] * side;
+      const cz = z - forward[1] * back + right[1] * side;
+      const model = multiply(
+        translation(cx, y - birdSize / 2, cz),
+        scaling(birdSize, birdSize, birdSize),
+      );
+      gl.uniformMatrix4fv(uModel, false, model);
+      gl.drawArrays(gl.TRIANGLES, 0, VERTEX_COUNT);
+    }
+  }
+  gl.enableVertexAttribArray(aColor);
 }
 
 function frame(time) {
@@ -417,6 +520,16 @@ Promise.all([
   loadImageData('assets/project2.png'),
   loadImageData('assets/heightmap.png'),
 ]).then(([colorMap, heightMap]) => {
+  const slider = document.getElementById('gridSize');
+  const label = document.getElementById('gridSizeLabel');
+
+  slider.addEventListener('input', () => {
+    label.textContent = `${slider.value} x ${slider.value}`;
+    gridSize = Number(slider.value);
+    buildScene(colorMap, heightMap);
+  });
+  
+  gridSize = Number(slider.value);
   buildScene(colorMap, heightMap);
   requestAnimationFrame(frame);
 });
